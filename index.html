@@ -1372,7 +1372,7 @@ function doImport(mode){
   }
 
   var have={}; S.invoices.forEach(function(v){ if(v.no) have[v.no]=1; });
-  var added=0, skipped=0, idMap={};
+  var added=0, skipped=0, idMap={}, wasEmpty=!S.invoices.length;
   (data.invoices||[]).forEach(function(v){
     if(v.no&&have[v.no]){ skipped++; return; }
     var oldId=v.id, nid=uid();
@@ -1403,6 +1403,13 @@ function doImport(mode){
   });
   Object.keys(data.budgets||{}).forEach(function(c){
     if(S.budgets[c]==null) S.budgets[c]=data.budgets[c]; });
+  // الإعدادات: في تطبيق جديد فارغ تُؤخذ كلها من النسخة، وإلا يُملأ سقف الميزانية فقط إن كان فارغًا
+  var ds=data.settings||{};
+  if(wasEmpty){
+    ["project","currency","vat","lastBackup"].forEach(function(k){
+      if(ds[k]!=null&&ds[k]!=="") S.settings[k]=ds[k]; });
+  }
+  if((S.settings.cap==null||S.settings.cap==="")&&ds.cap!=null) S.settings.cap=ds.cap;
   fix(); save();
   restoreFiles(data.attFiles||{},idMap).then(function(){
     closeSheet();
