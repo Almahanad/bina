@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#17252B" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="apple-touch-icon" href="icon-house-180.png">
 <style>
 :root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body{margin:0;font:14px -apple-system,BlinkMacSystemFont,system-ui,sans-serif}
@@ -1320,12 +1320,17 @@ function exportSheet(){
     '<button class="ghost" type="button" data-exp="inv">الفواتير</button>'+
     '<button class="ghost" type="button" data-exp="items">البنود</button>'+
     '<button class="ghost" type="button" data-exp="pay">المدفوعات</button></div></div>'+
-    '<div class="card"><div class="card-h"><h2>نسخة احتياطية كاملة</h2></div>'+
-    '<div class="note">ملف واحد يحوي كل شيء عدا المرفقات، تستعيده من «استيراد نسخة احتياطية».</div>'+
+    '<div class="card"><div class="card-h"><h2>انقل بياناتك بلا ملف</h2></div>'+
+    '<div class="note">أسهل طريقة لنقل كل شيء إلى تطبيق آخر على الهاتف نفسه: انسخ هنا، ثم افتح التطبيق الآخر ← «المزيد» ← «استيراد نسخة احتياطية» ← ألصق في المربع.</div>'+
+    '<div class="actions" style="margin-top:12px">'+
+    '<button class="primary" type="button" data-copy="full">انسخ كل شيء</button>'+
+    '<button class="ghost" type="button" data-copy="json">انسخ بلا مرفقات</button></div></div>'+
+    '<div class="card"><div class="card-h"><h2>نسخة احتياطية في ملف</h2></div>'+
+    '<div class="note">تحفظها في «الملفات» وتستعيدها من «استيراد نسخة احتياطية». '+
+      'اختر مجلدًا في <b>«على الـ iPhone»</b> لا في iCloud Drive: إن كانت مساحة iCloud ممتلئة يظهر تحت الملف «Error».</div>'+
     '<div class="actions" style="margin-top:12px">'+
     '<button class="primary" type="button" data-exp="full">نسخة كاملة بالمرفقات</button>'+
-    '<button class="ghost" type="button" data-exp="json">نسخة خفيفة بلا مرفقات</button>'+
-    '<button class="ghost" type="button" data-copy="json">انسخ النص</button></div>'+
+    '<button class="ghost" type="button" data-exp="json">نسخة خفيفة بلا مرفقات</button></div>'+
     '<div class="note" style="margin-top:10px">'+
     (S.settings.lastBackup?("آخر نسخة: "+esc(S.settings.lastBackup)):"لم تأخذ نسخة بعد.")+
     '</div></div>'+
@@ -1333,8 +1338,11 @@ function exportSheet(){
   openSheet("تصدير ونسخة احتياطية",h);
 }
 function importSheet(){
-  var h='<label class="f">اختر ملف النسخة (JSON)<input id="imp-f" type="file" accept=".json,application/json"></label>'+
-    '<label class="f">أو ألصق نص النسخة هنا<textarea id="imp-t" style="min-height:140px"></textarea></label>'+
+  var h='<label class="f">ألصق النسخة هنا<textarea id="imp-t" style="min-height:140px" '+
+      'placeholder="اضغط مطوّلًا ثم «لصق» بعد أن تنسخ من التطبيق الآخر"></textarea></label>'+
+    '<label class="f">أو اختر ملف النسخة<input id="imp-f" type="file"></label>'+
+    '<div class="note">لم تجد الملف؟ في تطبيق «الملفات» افتح تبويب <b>«الأخيرة»</b>، أو مجلد <b>«التنزيلات»</b>. '+
+      'وقد يكون اسمه «Unknown» أو «document» بدل اسمه الأصلي.</div>'+
     '<div class="actions"><button class="primary" type="button" data-doimport="merge">أضف إلى الموجود</button></div>'+
     '<div class="note">يضيف الفواتير الجديدة ويترك ما عندك كما هو، ويتخطّى أي فاتورة برقم موجود مسبقًا.</div>'+
     '<div class="warnbox">البديل أدناه <b>يمحو كل بياناتك الحالية</b> ويضع مكانها محتوى الملف. صدّر نسخة أولًا.</div>'+
@@ -1477,10 +1485,29 @@ document.addEventListener("click",function(e){
     if(d.exp==="full") fullBackup();
     return;
   }
+  if(d.copy==="full"){
+    // المرفقات تُقرأ بشكل غير متزامن، فنمرّر وعدًا إلى ClipboardItem داخل الضغطة نفسها (ما يشترطه سفاري)
+    var full=collectAtts().then(function(files){
+      markBackup();
+      var payload=JSON.parse(JSON.stringify(S)); payload.attFiles=files;
+      return new Blob([JSON.stringify(payload)],{type:"text/plain"});
+    });
+    try{
+      if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
+        navigator.clipboard.write([new ClipboardItem({"text/plain":full})])
+          .then(function(){ toast("نُسخ كل شيء — افتح التطبيق الآخر ← المزيد ← استيراد ← ألصق."); })
+          .catch(function(){ toast("تعذّر النسخ مع المرفقات — جرّب «انسخ بلا مرفقات»."); });
+        return;
+      }
+    }catch(e){}
+    toast("النسخ مع المرفقات غير متاح هنا — جرّب «انسخ بلا مرفقات».");
+    return;
+  }
   if(d.copy){
     var text=JSON.stringify(S);
     if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){ toast("نُسخت النسخة — ألصقها في ملاحظة."); })
+      navigator.clipboard.writeText(text).then(function(){
+        markBackup(); toast("نُسخ — افتح التطبيق الآخر ← المزيد ← استيراد ← ألصق."); })
         .catch(function(){ toast("تعذّر النسخ."); });
     } else toast("النسخ غير متاح هنا.");
     return;
@@ -1519,7 +1546,8 @@ try{ var sv=localStorage.getItem(KEY+"_tab"); if(sv&&TITLES[sv]) startTab=sv; }c
 show(startTab);
 setTimeout(function(){ try{ migrateAtts(); }catch(e){} },900);
 
-if("serviceWorker" in navigator && location.protocol==="https:"){
+if("serviceWorker" in navigator &&
+   (location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1")){
   try{ navigator.serviceWorker.register("sw.js").catch(function(){}); }catch(e){}
 }
 })();

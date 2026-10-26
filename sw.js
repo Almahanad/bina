@@ -1,6 +1,6 @@
-// دفتر بناء — تخزين مؤقت يجعل التطبيق يعمل بدون إنترنت
-var CACHE = 'bina-v1';
-var FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
+// دفتر بناء — يعمل بدون إنترنت، ويجلب التحديثات حين يتوفر الاتصال
+var CACHE = 'bina-v2';
+var FILES = ['./', './index.html', './manifest.webmanifest', './icon-house-180.png', './icon-house-512.png'];
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -13,16 +13,37 @@ self.addEventListener('activate', function (e) {
   }).then(function () { return self.clients.claim(); }));
 });
 
+function store(req, res) {
+  if (res && res.ok) {
+    var copy = res.clone();
+    caches.open(CACHE).then(function (c) { c.put(req, copy); }).catch(function () {});
+  }
+  return res;
+}
+function late(ms) {
+  return new Promise(function (_, reject) { setTimeout(function () { reject(new Error('timeout')); }, ms); });
+}
+
 self.addEventListener('fetch', function (e) {
-  if (e.request.method !== 'GET') return;
+  var req = e.request;
+  if (req.method !== 'GET') return;
+  var path = new URL(req.url).pathname;
+  var isPage = req.mode === 'navigate' || /\/(index\.html)?$/.test(path);
+
+  // الصفحة: من الشبكة أولًا لتصل التحديثات، ومن الذاكرة عند انقطاع الاتصال
+  if (isPage) {
+    e.respondWith(
+      Promise.race([fetch(req), late(4000)]).then(function (res) { return store(req, res); })
+        .catch(function () {
+          return caches.match(req).then(function (hit) { return hit || caches.match('./index.html'); });
+        })
+    );
+    return;
+  }
+  // بقية الملفات: من الذاكرة أولًا
   e.respondWith(
-    caches.match(e.request).then(function (hit) {
-      if (hit) return hit;
-      return fetch(e.request).then(function (res) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
-        return res;
-      }).catch(function () { return caches.match('./index.html'); });
+    caches.match(req).then(function (hit) {
+      return hit || fetch(req).then(function (res) { return store(req, res); });
     })
   );
 });
