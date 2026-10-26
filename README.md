@@ -7,3 +7,8 @@
 ---
 
 An Arabic app for tracking a home-construction project's invoices and budget. Works offline after the first visit; all data stays on the user's device.
+
+---
+
+الخط: IBM Plex Sans Arabic، حقوقه © IBM Corp، مرخّص بموجب [SIL Open Font License 1.1](https://openfontlicense.org).
+Font: IBM Plex Sans Arabic © IBM Corp., licensed under the SIL Open Font License 1.1.
