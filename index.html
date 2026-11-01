@@ -209,7 +209,13 @@ label.f input,label.f select,label.f textarea{min-height:48px;width:100%;padding
   border-radius:var(--r-md);background:var(--surface);color:var(--fg);font-size:16px;font-weight:400}
 label.f input:focus,label.f select:focus,label.f textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 label.f textarea{min-height:84px;resize:vertical}
+/* سفاري يعطي حقل التاريخ عرضًا ذاتيًا يتجاوز عموده؛ نلغيه ليلتزم بعرض الخانة */
+label.f input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;display:block;text-align:right}
+label.f input[type="date"]::-webkit-date-and-time-value{text-align:right}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.grid2>*{min-width:0}
+.chk{display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--muted);line-height:1.6}
+.chk input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--accent);flex-shrink:0}
 .actions{display:flex;gap:10px;flex-wrap:wrap}
 
 .note{font-size:12.5px;color:var(--muted);line-height:1.65}
@@ -723,6 +729,9 @@ function invoiceForm(id,preset){
          vatRate:S.settings.vat,due:"",method:"",note:"",items:[],atts:[]};
   var supNames=S.suppliers.map(function(s){return s.name});
   var hasItems=v.items&&v.items.length;
+  // فاتورة مدفوعة بالكامل بدفعة واحدة: نعرض خيار تحديث الدفعة مع المبلغ
+  var vPays=isNew?[]:S.payments.filter(function(p){return p.inv===v.id});
+  var syncable=!isNew&&vPays.length===1&&invTotal(v)>0&&Math.abs(invPaid(v)-invTotal(v))<0.0005;
   var h=''+
   '<div class="grid2">'+
     '<label class="f">رقم الفاتورة<input id="f-no" type="text" value="'+esc(v.no)+'" placeholder="INV-0002"></label>'+
@@ -736,16 +745,19 @@ function invoiceForm(id,preset){
   '</div>'+
   '<div class="grid2">'+
     '<label class="f">المبلغ قبل الضريبة<input id="f-net" type="number" inputmode="decimal" step="0.001" value="'+
-      (hasItems?esc(invNet(v)):(v.net==null?"":esc(v.net)))+'"'+(hasItems?" disabled":"")+'></label>'+
+      (hasItems?esc(invNet(v)):(v.net==null?"":esc(v.net)))+'"></label>'+
     '<label class="f">نسبة الضريبة<input id="f-vat" type="number" inputmode="decimal" step="0.01" value="'+esc(v.vatRate==null?S.settings.vat:v.vatRate)+'"></label>'+
   '</div>'+
-  (hasItems?'<div class="note">المبلغ محسوب من '+v.items.length+' بنود — عدّلها من صفحة الفاتورة.</div>':
+  (hasItems?'<div class="note">هذا مجموع بنود الفاتورة ('+v.items.length+'). يمكنك تغييره، وعندها أسألك ماذا أفعل بالبنود.</div>':
             '<div class="note">اتركه فارغًا إن كنت ستدخل البنود تفصيلًا بعد الحفظ.</div>')+
+  (syncable?'<label class="chk"><input id="f-syncpay" type="checkbox" checked>'+
+    '<span>الفاتورة مدفوعة بالكامل. إن غيّرت المبلغ أو الضريبة، أعدّل الدفعة المسجّلة لتساوي الإجمالي الجديد.</span></label>':"")+
   '<div class="grid2">'+
     '<label class="f">تاريخ دفع الفاتورة<input id="f-due" type="date" value="'+esc(v.due)+'"></label>'+
     '<label class="f">طريقة الدفع<select id="f-method">'+opts(S.lists.methods,v.method)+'</select></label>'+
   '</div>'+
   '<label class="f">ملاحظات<textarea id="f-note">'+esc(v.note)+'</textarea></label>'+
+  '<div id="f-choice"></div>'+
   '<div class="actions"><button class="primary" type="button" data-save="'+esc(v.id)+'">حفظ</button>'+
   (isNew?"":'<button class="ghost danger" type="button" data-del="'+esc(v.id)+'">حذف الفاتورة</button>')+'</div>';
   openSheet(isNew?"فاتورة جديدة":"تعديل الفاتورة",h);
@@ -754,6 +766,20 @@ function invoiceForm(id,preset){
   el("sheetBody").dataset.vitems=JSON.stringify(v.items||[]);
   el("sheetBody").dataset.vatts=JSON.stringify(v.atts||[]);
   el("sheetBody").dataset.vexample=v.example?"1":"";
+  el("sheetBody").dataset.resolve="";
+}
+function itemsSum(items){
+  return r3(items.reduce(function(a,it){ return a+r3(n(it.q)*n(it.p)); },0));
+}
+function askItemsChoice(count,sum,typed){
+  var box=el("f-choice"); if(!box) return;
+  box.innerHTML='<div class="warnbox">هذه الفاتورة مقسّمة إلى بنود ('+count+') مجموعها '+
+    '<b class="num" dir="ltr">'+esc(fmt(sum))+'</b>، والمبلغ الذي كتبته <b class="num" dir="ltr">'+esc(fmt(typed))+'</b>. '+
+    'إن اعتمدته تُحذف البنود ويصير المبلغ مُدخلًا مباشرة.'+
+    '<div class="actions" style="margin-top:12px">'+
+    '<button class="primary" type="button" data-netchoice="drop">اعتمد المبلغ الجديد</button>'+
+    '<button class="ghost" type="button" data-netchoice="keep">تراجع وأبقِ البنود</button></div></div>';
+  try{ box.scrollIntoView({block:"center",behavior:"smooth"}); }catch(e){ box.scrollIntoView(); }
 }
 function saveInvoice(id){
   var b=el("sheetBody"), isNew=b.dataset.editing==="new";
@@ -762,15 +788,36 @@ function saveInvoice(id){
   if(!no){ toast("اكتب رقم الفاتورة أولًا."); el("f-no").focus(); return; }
   var dup=S.invoices.filter(function(x){return x.no===no&&x.id!==id});
   if(dup.length){ toast("رقم الفاتورة مستخدم في فاتورة أخرى."); return; }
+
+  // المبلغ: إن كانت للفاتورة بنود وكتب المستخدم مبلغًا مختلفًا، نسأله قبل حذف البنود
+  var typedRaw=el("f-net").value, net=null;
+  if(items.length){
+    var sum=itemsSum(items), typed=typedRaw===""?sum:r3(n(typedRaw));
+    if(Math.abs(typed-sum)>0.0005){
+      if(b.dataset.resolve!=="drop"){ askItemsChoice(items.length,sum,typed); return; }
+      items=[]; net=typed;
+    }
+  }else{
+    net=typedRaw===""?null:n(typedRaw);
+  }
+
   var v={id:id,no:no,date:el("f-date").value,supplier:el("f-sup").value.trim(),
     category:el("f-cat").value,stage:el("f-stage").value,
-    net:items.length?null:(el("f-net").value===""?null:n(el("f-net").value)),
+    net:net,
     vatRate:el("f-vat").value===""?S.settings.vat:n(el("f-vat").value),
     due:el("f-due").value,method:el("f-method").value,note:el("f-note").value.trim(),
     items:items,atts:JSON.parse(b.dataset.vatts||"[]")};
   if(b.dataset.vexample) v.example=true;
   if(isNew) S.invoices.push(v);
   else S.invoices=S.invoices.map(function(x){ return x.id===id?v:x; });
+
+  // الدفعة الوحيدة لفاتورة كانت مدفوعة بالكامل تتبع الإجمالي الجديد
+  var sp=el("f-syncpay");
+  if(sp&&sp.checked){
+    var newTotal=invTotal(v);
+    S.payments=S.payments.map(function(p){
+      return p.inv===id?{id:p.id,inv:p.inv,amount:newTotal,date:p.date,method:p.method,ref:p.ref}:p; });
+  }
   save();
   if(v.supplier&&!S.suppliers.some(function(s){return s.name===v.supplier})){
     S.suppliers.push({id:uid(),name:v.supplier,tax:"",phone:"",note:""}); save();
@@ -1533,10 +1580,16 @@ function doImport(mode){
 
 /* ══════════ الأحداث ══════════ */
 document.addEventListener("click",function(e){
-  var t=e.target.closest?e.target.closest("[data-tab],[data-go],[data-open],[data-act],[data-filter],[data-save],[data-del],[data-edit],[data-pay],[data-item],[data-saveitem],[data-savepay],[data-delitem],[data-delpay],[data-delsup],[data-savesup],[data-dellist],[data-savelist],[data-savesettings],[data-savebud],[data-exp],[data-copy],[data-doimport],[data-delatt],[data-invpdf],[data-pdf],[data-sharefile],[data-dlfile],[data-dup],[data-edititem],[data-editpay],[data-viewatt],[data-gofilter],[data-new]"):null;
+  var t=e.target.closest?e.target.closest("[data-tab],[data-go],[data-open],[data-act],[data-filter],[data-save],[data-del],[data-edit],[data-pay],[data-item],[data-saveitem],[data-savepay],[data-delitem],[data-delpay],[data-delsup],[data-savesup],[data-dellist],[data-savelist],[data-savesettings],[data-savebud],[data-exp],[data-copy],[data-doimport],[data-delatt],[data-invpdf],[data-pdf],[data-sharefile],[data-dlfile],[data-dup],[data-edititem],[data-editpay],[data-viewatt],[data-gofilter],[data-new],[data-netchoice]"):null;
   if(!t) return;
   var d=t.dataset;
   if(d.tab){ show(d.tab); return; }
+  if(d.netchoice){
+    var sb=el("sheetBody");
+    if(d.netchoice==="drop"){ sb.dataset.resolve="drop"; saveInvoice(sb.dataset.vid); }
+    else{ el("f-net").value=itemsSum(JSON.parse(sb.dataset.vitems||"[]")); el("f-choice").innerHTML=""; }
+    return;
+  }
   if(d.gofilter){ invFilter=d.gofilter; show("inv"); return; }
   if(d.new){ invoiceForm(null); return; }
   if(d.go){ show(d.go); return; }
